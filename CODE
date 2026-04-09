@@ -1,0 +1,78 @@
+Step 1 
+
+>>>from pyspark.sql import SparkSession
+>>>spark = SparkSession.builder.appName("AQI_Prediction").getOrCreate()
+>>>df = spark.read.csv("/Users/jaykishan/int332/air.csv", header=True, inferSchema=True)
+>>>df.show()
+>>>df.printSchema()
+
+Step 2 
+Missing  null values
+
+>>>df = df.withColumnRenamed("PM2.5", "PM2_5")
+>>>df = df.dropna(subset=["PM2_5", "PM10", "NO2", "CO", "O3"])
+
+Step 3
+Convert Categorical(City/Region)
+
+>>>from pyspark.ml.feature import StringIndexer
+>>>indexer = StringIndexer(inputCol="city", outputCol="city_index")
+>>>df = indexer.fit(df).transform(df)
+
+Step 4
+Select Features 
+
+>>>feature_columns = ["CO", "PM2_5", "PM10", "NO2", "O3", "city_index"]
+
+Step 5 
+Vector + Normalize 
+
+>>>from pyspark.ml.feature import VectorAssembler, StandardScaler
+>>>assembler = VectorAssembler(inputCols=feature_columns, outputCol="features_unscaled")
+>>>data = assembler.transform(df)
+>>>scaler = StandardScaler(inputCol="features_unscaled", outputCol="features")
+>>>data = scaler.fit(data).transform(data)
+>>>from pyspark.sql.functions import col
+>>>df = df.withColumn(
+"AQI",
+(col("PM2_5") + col("PM10") + col("NO2") + col("SO2") + col("CO") + col("O3")) / 6
+)
+
+Step 6
+
+>>>from pyspark.ml.feature import VectorAssembler
+
+>>>assembler = VectorAssembler(inputCols=feature_columns, outputCol="features_unscaled")
+>>>data = assembler.transform(df)
+>>>from pyspark.ml.feature import StandardScaler
+>>>scaler = StandardScaler(inputCol="features_unscaled", outputCol="features")
+>>>data = scaler.fit(data).transform(data)
+>>>final_data = data.select("features", "AQI")
+
+
+Step 7
+Train-Test DataSet 
+
+>>>train_data, test_data = final_data.randomSplit([0.8, 0.2])
+
+
+Step 8  Linear regression Model 
+
+>>>from pyspark.ml.regression import LinearRegression
+>>>lr = LinearRegression(featuresCol="features", labelCol="AQI")
+>>>model = lr.fit(train_data)
+
+Step 9 
+Prediction 
+
+>>>predictions = model.transform(test_data)
+>>>predictions.select("AQI", "prediction").show()
+
+Step 10 
+Evaluation 
+
+>>>from pyspark.ml.evaluation import RegressionEvaluator
+>>>rmse = RegressionEvaluator(labelCol="AQI", predictionCol="prediction", metricName="rmse").evaluate(predictions)
+>>>r2 = RegressionEvaluator(labelCol="AQI", predictionCol="prediction", metricName="r2").evaluate(predictions)
+>>>print("RMSE:", rmse)
+>>>print("R2:", r2)
